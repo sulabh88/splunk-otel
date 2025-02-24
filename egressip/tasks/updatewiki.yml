@@ -1,0 +1,79 @@
+---
+- hosts: localhost
+  gather_facts: false
+  vars:
+    # Local temp path where wiki repo will be cloned
+    local_clone_dir: "/tmp/wiki_repo"
+
+    # GitLab Wiki repo URL (use HTTPS with token or SSH)
+    wiki_repo_url: "https://oauth2:{{ gitlab_token }}@gitlab.com/{{ gitlab_namespace }}/{{ gitlab_repo }}.wiki.git"
+
+    # Example inputs (these would usually come from CI variables or role vars)
+    cluster: "cluster1"
+    namespace: "payments"
+
+  tasks:
+    - name: Ensure git is installed
+      package:
+        name: git
+        state: present
+
+    - name: Clone GitLab Wiki repo
+      git:
+        repo: "{{ wiki_repo_url }}"
+        dest: "{{ local_clone_dir }}"
+        version: "main"
+        force: yes
+
+    - name: Ensure cluster directory exists inside wiki
+      file:
+        path: "{{ local_clone_dir }}/Caas-EgressIP/{{ cluster }}"
+        state: directory
+        recurse: yes
+
+    - name: Copy manifest into cluster/namespace file
+      copy:
+        src: "{{ role_path }}/files/{{ namespace }}/egress.yaml"
+        dest: "{{ local_clone_dir }}/Caas-EgressIP/{{ cluster }}/{{ namespace }}-{{ cluster }}-egress.yaml"
+
+    # Rebuild index.md from scratch
+    - name: Find all manifest files
+      find:
+        paths: "{{ local_clone_dir }}/Caas-EgressIP"
+        patterns: "*-egress.yaml"
+        recurse: yes
+      register: manifest_files
+
+    - name: Generate index.md content
+      copy:
+        dest: "{{ local_clone_dir }}/Caas-EgressIP/index.md"
+        content: |
+          # CaaS EgressIP Manifest Index
+
+          {% for f in manifest_files.files | sort(attribute='path') %}
+          {% set parts = f.path.split('/') %}
+          {% set cluster_name = parts[-2] %}
+          {% set file_name = parts[-1] %}
+          {% set namespace = file_name.split('-')[0] %}
+          - Cluster: {{ cluster_name }} / Namespace: {{ namespace }}
+            [View Manifest](./{{ cluster_name }}/{{ file_name }})
+          {% endfor %}
+
+    - name: Stage wiki changes
+      command: git add Caas-EgressIP/
+      args:
+        chdir: "{{ local_clone_dir }}"
+
+    - name: Commit wiki changes (skip if no changes)
+      command: git commit -m "Update CaaS EgressIP manifests for {{ namespace }} / {{ cluster }}"
+      args:
+        chdir: "{{ local_clone_dir }}"
+      register: commit_result
+      failed_when: false
+
+    - name: Push wiki changes
+      command: git push origin main
+      args:
+        chdir: "{{ local_clone_dir }}"
+      when: commit_result.rc == 0
+

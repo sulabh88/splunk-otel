@@ -1,0 +1,412 @@
+
+
+
+    Dim rng As Range, cell As Range
+    Dim dict As Object
+    
+    Set ws = ActiveSheet
+    lastRow = ws.Cells(ws.Rows.Count, "B").End(xlUp).Row
+    startRow = 2 ' assuming headers in row 1
+    
+    Do While startRow <= lastRow
+        ' find next blank row (end of block)
+        endRow = startRow
+        Do While endRow <= lastRow And ws.Cells(endRow, "A") <> "" And ws.Cells(endRow, "B") <> ""
+            endRow = endRow + 1
+        Loop
+        
+        ' create dictionary for images
+        Set dict = CreateObject("Scripting.Dictionary")
+        For Each cell In ws.Range("B" & startRo
+****************************CLear cell***************************
+Sub ClearLightRedHighlights()
+    Dim ws As Worksheet
+    Dim lastRow As Long, rng As Range, cell As Range
+    
+    Set ws = ActiveSheet
+    lastRow = ws.Cells(ws.Rows.Count, "B").End(xlUp).Row
+    
+    ' check used range
+    For Each cell In ws.Range("A2:C" & lastRow) ' adjust columns if needed
+        If cell.EntireRow.Interior.Color = RGB(255, 200, 200) Then
+            cell.EntireRow.Interior.ColorIndex = xlNone ' clear highlight
+        End If
+    Next cell
+End Sub
+***************************
+Sub HighlightAllRedhatOperatorIndexDuplicatesByBlock()
+    Dim ws As Worksheet
+    Dim lastRow As Long, startRow As Long, endRow As Long
+    Dim cell As Range
+    Dim dict As Object, firstRow As Object
+    Dim img As String
+    
+    Set ws = ActiveSheet
+    lastRow = ws.Cells(ws.Rows.Count, "B").End(xlUp).Row
+    startRow = 2 ' assuming headers in row 1
+    
+    Do While startRow <= lastRow
+        ' find next blank row (end of block)
+        endRow = startRow
+        Do While endRow <= lastRow And ws.Cells(endRow, "A") <> "" And ws.Cells(endRow, "B") <> ""
+            endRow = endRow + 1
+        Loop
+        
+        ' create dictionary for images + store first occurrence row
+        Set dict = CreateObject("Scripting.Dictionary")
+        Set firstRow = CreateObject("Scripting.Dictionary")
+        
+        For Each cell In ws.Range("B" & startRow & ":B" & endRow - 1)
+            img = Trim(cell.Value)
+            If img <> "" Then
+                ' only consider images containing "redhat-operator-index"
+                If InStr(1, img, "redhat-operator-index", vbTextCompare) > 0 Then
+                    If dict.exists(img) Then
+                        ' highlight this duplicate
+                        cell.EntireRow.Interior.Color = RGB(255, 200, 200)
+                        ' also highlight the first occurrence if not already done
+                        If firstRow.exists(img) Then
+                            ws.Rows(firstRow(img)).Interior.Color = RGB(255, 200, 200)
+                        End If
+                    Else
+                        dict.Add img, True
+                        firstRow.Add img, cell.Row
+                    End If
+                End If
+            End If
+        Next cell
+        
+        ' move to next block (after blank row)
+        startRow = endRow + 1
+    Loop
+End Sub
+***************************
+Sub HighlightAllRedhatOperatorIndexDuplicatesByBlock()
+    Dim ws As Worksheet
+    Dim lastRow As Long, startRow As Long, endRow As Long
+    Dim cell As Range
+    Dim dict As Object, firstRow As Object
+    Dim img As String
+    
+    Set ws = ActiveSheet
+    lastRow = ws.Cells(ws.Rows.Count, "B").End(xlUp).Row
+    startRow = 2 ' assuming headers in row 1
+    
+    Do While startRow <= lastRow
+        ' find next blank row (end of block)
+        endRow = startRow
+        Do While endRow <= lastRow And ws.Cells(endRow, "A") <> "" And ws.Cells(endRow, "B") <> ""
+            endRow = endRow + 1
+        Loop
+        
+        ' create dictionary for images + store first occurrence row
+        Set dict = CreateObject("Scripting.Dictionary")
+        Set firstRow = CreateObject("Scripting.Dictionary")
+        
+        For Each cell In ws.Range("B" & startRow & ":B" & endRow - 1)
+            img = Trim(cell.Value)
+            If img <> "" Then
+                ' only consider images containing "redhat-operator-index"
+                If InStr(1, img, "redhat-operator-index", vbTextCompare) > 0 Then
+                    If dict.exists(img) Then
+                        ' highlight this duplicate
+                        cell.EntireRow.Interior.Color = RGB(255, 200, 200)
+                        ' also highlight the first occurrence if not already done
+                        If firstRow.exists(img) Then
+                            ws.Rows(firstRow(img)).Interior.Color = RGB(255, 200, 200)
+                        End If
+                    Else
+                        dict.Add img, True
+                        firstRow.Add img, cell.Row
+                    End If
+                End If
+            End If
+        Next cell
+        
+        ' move to next block (after blank row)
+        startRow = endRow + 1
+    Loop
+End Sub
+***************************
+Sub HighlightAllRedhatOperatorIndexDuplicatesByBlock()
+    Dim ws As Worksheet
+    Dim lastRow As Long, startRow As Long, endRow As Long
+    Dim cell As Range
+    Dim dict As Object, firstRow As Object
+    Dim img As String
+    
+    Set ws = ActiveSheet
+    lastRow = ws.Cells(ws.Rows.Count, "B").End(xlUp).Row
+    startRow = 2 ' assuming headers in row 1
+    
+    Do While startRow <= lastRow
+        ' find next blank row (end of block)
+        endRow = startRow
+        Do While endRow <= lastRow And ws.Cells(endRow, "A") <> "" And ws.Cells(endRow, "B") <> ""
+            endRow = endRow + 1
+        Loop
+        
+        ' create dictionary for images + store first occurrence row
+        Set dict = CreateObject("Scripting.Dictionary")
+        Set firstRow = CreateObject("Scripting.Dictionary")
+        
+        For Each cell In ws.Range("B" & startRow & ":B" & endRow - 1)
+            img = Trim(cell.Value)
+            If img <> "" Then
+                ' only consider images containing "redhat-operator-index"
+                If InStr(1, img, "redhat-operator-index", vbTextCompare) > 0 Then
+                    If dict.exists(img) Then
+                        ' highlight this duplicate
+                        cell.EntireRow.Interior.Color = RGB(255, 200, 200)
+                        ' also highlight the first occurrence if not already done
+                        If firstRow.exists(img) Then
+                            ws.Rows(firstRow(img)).Interior.Color = RGB(255, 200, 200)
+                        End If
+                    Else
+                        dict.Add img, True
+                        firstRow.Add img, cell.Row
+                    End If
+                End If
+            End If
+        Next cell
+        
+        ' move to next block (after blank row)
+        startRow = endRow + 1
+    Loop
+End Sub
+***************************
+Sub HighlightAllRedhatOperatorIndexDuplicatesByBlock()
+    Dim ws As Worksheet
+    Dim lastRow As Long, startRow As Long, endRow As Long
+    Dim cell As Range
+    Dim dict As Object, firstRow As Object
+    Dim img As String
+    
+    Set ws = ActiveSheet
+    lastRow = ws.Cells(ws.Rows.Count, "B").End(xlUp).Row
+    startRow = 2 ' assuming headers in row 1
+    
+    Do While startRow <= lastRow
+        ' find next blank row (end of block)
+        endRow = startRow
+        Do While endRow <= lastRow And ws.Cells(endRow, "A") <> "" And ws.Cells(endRow, "B") <> ""
+            endRow = endRow + 1
+        Loop
+        
+        ' create dictionary for images + store first occurrence row
+        Set dict = CreateObject("Scripting.Dictionary")
+        Set firstRow = CreateObject("Scripting.Dictionary")
+        
+        For Each cell In ws.Range("B" & startRow & ":B" & endRow - 1)
+            img = Trim(cell.Value)
+            If img <> "" Then
+                ' only consider images containing "redhat-operator-index"
+                If InStr(1, img, "redhat-operator-index", vbTextCompare) > 0 Then
+                    If dict.exists(img) Then
+                        ' highlight this duplicate
+                        cell.EntireRow.Interior.Color = RGB(255, 200, 200)
+                        ' also highlight the first occurrence if not already done
+                        If firstRow.exists(img) Then
+                            ws.Rows(firstRow(img)).Interior.Color = RGB(255, 200, 200)
+                        End If
+                    Else
+                        dict.Add img, True
+                        firstRow.Add img, cell.Row
+                    End If
+                End If
+            End If
+        Next cell
+        
+        ' move to next block (after blank row)
+        startRow = endRow + 1
+    Loop
+End Sub
+***************************
+Sub HighlightAllRedhatOperatorIndexDuplicatesByBlock()
+    Dim ws As Worksheet
+    Dim lastRow As Long, startRow As Long, endRow As Long
+    Dim cell As Range
+    Dim dict As Object, firstRow As Object
+    Dim img As String
+    
+    Set ws = ActiveSheet
+    lastRow = ws.Cells(ws.Rows.Count, "B").End(xlUp).Row
+    startRow = 2 ' assuming headers in row 1
+    
+    Do While startRow <= lastRow
+        ' find next blank row (end of block)
+        endRow = startRow
+        Do While endRow <= lastRow And ws.Cells(endRow, "A") <> "" And ws.Cells(endRow, "B") <> ""
+            endRow = endRow + 1
+        Loop
+        
+        ' create dictionary for images + store first occurrence row
+        Set dict = CreateObject("Scripting.Dictionary")
+        Set firstRow = CreateObject("Scripting.Dictionary")
+        
+        For Each cell In ws.Range("B" & startRow & ":B" & endRow - 1)
+            img = Trim(cell.Value)
+            If img <> "" Then
+                ' only consider images containing "redhat-operator-index"
+                If InStr(1, img, "redhat-operator-index", vbTextCompare) > 0 Then
+                    If dict.exists(img) Then
+                        ' highlight this duplicate
+                        cell.EntireRow.Interior.Color = RGB(255, 200, 200)
+                        ' also highlight the first occurrence if not already done
+                        If firstRow.exists(img) Then
+                            ws.Rows(firstRow(img)).Interior.Color = RGB(255, 200, 200)
+                        End If
+                    Else
+                        dict.Add img, True
+                        firstRow.Add img, cell.Row
+                    End If
+                End If
+            End If
+        Next cell
+        
+        ' move to next block (after blank row)
+        startRow = endRow + 1
+    Loop
+End Sub
+***************************
+Sub HighlightAllRedhatOperatorIndexDuplicatesByBlock()
+    Dim ws As Worksheet
+    Dim lastRow As Long, startRow As Long, endRow As Long
+    Dim cell As Range
+    Dim dict As Object, firstRow As Object
+    Dim img As String
+    
+    Set ws = ActiveSheet
+    lastRow = ws.Cells(ws.Rows.Count, "B").End(xlUp).Row
+    startRow = 2 ' assuming headers in row 1
+    
+    Do While startRow <= lastRow
+        ' find next blank row (end of block)
+        endRow = startRow
+        Do While endRow <= lastRow And ws.Cells(endRow, "A") <> "" And ws.Cells(endRow, "B") <> ""
+            endRow = endRow + 1
+        Loop
+        
+        ' create dictionary for images + store first occurrence row
+        Set dict = CreateObject("Scripting.Dictionary")
+        Set firstRow = CreateObject("Scripting.Dictionary")
+        
+        For Each cell In ws.Range("B" & startRow & ":B" & endRow - 1)
+            img = Trim(cell.Value)
+            If img <> "" Then
+                ' only consider images containing "redhat-operator-index"
+                If InStr(1, img, "redhat-operator-index", vbTextCompare) > 0 Then
+                    If dict.exists(img) Then
+                        ' highlight this duplicate
+                        cell.EntireRow.Interior.Color = RGB(255, 200, 200)
+                        ' also highlight the first occurrence if not already done
+                        If firstRow.exists(img) Then
+                            ws.Rows(firstRow(img)).Interior.Color = RGB(255, 200, 200)
+                        End If
+                    Else
+                        dict.Add img, True
+                        firstRow.Add img, cell.Row
+                    End If
+                End If
+            End If
+        Next cell
+        
+        ' move to next block (after blank row)
+        startRow = endRow + 1
+    Loop
+End Sub
+***************************
+Sub HighlightAllRedhatOperatorIndexDuplicatesByBlock()
+    Dim ws As Worksheet
+    Dim lastRow As Long, startRow As Long, endRow As Long
+    Dim cell As Range
+    Dim dict As Object, firstRow As Object
+    Dim img As String
+    
+    Set ws = ActiveSheet
+    lastRow = ws.Cells(ws.Rows.Count, "B").End(xlUp).Row
+    startRow = 2 ' assuming headers in row 1
+    
+    Do While startRow <= lastRow
+        ' find next blank row (end of block)
+        endRow = startRow
+        Do While endRow <= lastRow And ws.Cells(endRow, "A") <> "" And ws.Cells(endRow, "B") <> ""
+            endRow = endRow + 1
+        Loop
+        
+        ' create dictionary for images + store first occurrence row
+        Set dict = CreateObject("Scripting.Dictionary")
+        Set firstRow = CreateObject("Scripting.Dictionary")
+        
+        For Each cell In ws.Range("B" & startRow & ":B" & endRow - 1)
+            img = Trim(cell.Value)
+            If img <> "" Then
+                ' only consider images containing "redhat-operator-index"
+                If InStr(1, img, "redhat-operator-index", vbTextCompare) > 0 Then
+                    If dict.exists(img) Then
+                        ' highlight this duplicate
+                        cell.EntireRow.Interior.Color = RGB(255, 200, 200)
+                        ' also highlight the first occurrence if not already done
+                        If firstRow.exists(img) Then
+                            ws.Rows(firstRow(img)).Interior.Color = RGB(255, 200, 200)
+                        End If
+                    Else
+                        dict.Add img, True
+                        firstRow.Add img, cell.Row
+                    End If
+                End If
+            End If
+        Next cell
+        
+        ' move to next block (after blank row)
+        startRow = endRow + 1
+    Loop
+End Sub
+***************************
+Sub HighlightAllRedhatOperatorIndexDuplicatesByBlock()
+    Dim ws As Worksheet
+    Dim lastRow As Long, startRow As Long, endRow As Long
+    Dim cell As Range
+    Dim dict As Object, firstRow As Object
+    Dim img As String
+    
+    Set ws = ActiveSheet
+    lastRow = ws.Cells(ws.Rows.Count, "B").End(xlUp).Row
+    startRow = 2 ' assuming headers in row 1
+    
+    Do While startRow <= lastRow
+        ' find next blank row (end of block)
+        endRow = startRow
+        Do While endRow <= lastRow And ws.Cells(endRow, "A") <> "" And ws.Cells(endRow, "B") <> ""
+            endRow = endRow + 1
+        Loop
+        
+        ' create dictionary for images + store first occurrence row
+        Set dict = CreateObject("Scripting.Dictionary")
+        Set firstRow = CreateObject("Scripting.Dictionary")
+        
+        For Each cell In ws.Range("B" & startRow & ":B" & endRow - 1)
+            img = Trim(cell.Value)
+            If img <> "" Then
+                ' only consider images containing "redhat-operator-index"
+                If InStr(1, img, "redhat-operator-index", vbTextCompare) > 0 Then
+                    If dict.exists(img) Then
+                        ' highlight this duplicate
+                        cell.EntireRow.Interior.Color = RGB(255, 200, 200)
+                        ' also highlight the first occurrence if not already done
+                        If firstRow.exists(img) Then
+                            ws.Rows(firstRow(img)).Interior.Color = RGB(255, 200, 200)
+                        End If
+                    Else
+                        dict.Add img, True
+                        firstRow.Add img, cell.Row
+                    End If
+                End If
+            End If
+        Next cell
+        
+        ' move to next block (after blank row)
+        startRow = endRow + 1
+    Loop
+End Sub
+

@@ -1,0 +1,13 @@
+apiVersion: k8s.ovn.org/v1
+kind: EgressIP
+metadata:
+  name: {{ namespace }}-egress
+spec:
+  egressIPs:
+{% for ip in egress_ips %}
+    - {{ ip }}
+{% endfor %}
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: {{ namespace }}
+

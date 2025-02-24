@@ -1,0 +1,35 @@
+# group_vars/all.yaml
+
+# Base domains per environment
+environments:
+  eng: caas.bbetnet.com
+  dmz_test: caas.bbttest.com
+  dmz_prod: bbtprod.com
+  ncw: caas.bbtnet.com
+  default: beetnet.com
+
+# Cluster → environment mapping rules
+# Order matters → first matching pattern wins
+cluster_patterns:
+  - pattern: ^ocp-eng$
+    env: eng
+  - pattern: ^ncw-.*-dmz$
+    env: dmz_test
+  - pattern: ^ncz-.*-dmz$
+    env: dmz_prod
+  - pattern: ^ncw-
+    env: ncw
+  - pattern: ^ocp-
+    env: default
+
+# Derive base_domain dynamically
+base_domain: >-
+  {%- set env = 'default' -%}
+  {%- for item in cluster_patterns -%}
+    {%- if cluster is match(item.pattern) -%}
+      {%- set env = item.env -%}
+      {%- break -%}
+    {%- endif -%}
+  {%- endfor -%}
+  {{ environments[env] }}
+

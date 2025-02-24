@@ -1,0 +1,82 @@
+# =========================================
+# Stage 1: Builder stage
+# =========================================
+ARG BASE_IMAGE=registry.access.redhat.com/ubi9/ubi-minimal
+FROM ${BASE_IMAGE} AS builder
+
+ARG OC_CLI_VERSION
+ARG HELM_VERSION
+ARG PIP_INDEX_URL="https://artifactory/pypi-org/simple"
+
+# Environment variables
+ENV HOME=/home/appuser \
+    ANSIBLE_LOCAL_TEMP=/home/appuser/.ansible/tmp \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+# Copy repo configuration
+COPY ubi9.repo /etc/yum.repos.d/ubi.repo
+
+# Install dependencies for build
+RUN microdnf install -y --nodocs \
+        python3.11 python3.11-pip git tar shadow-utils curl \
+    && ln -sf /usr/bin/python3.11 /usr/bin/python3 \
+    && ln -sf /usr/bin/pip3.11 /usr/bin/pip3 \
+    && microdnf clean all
+
+# Create app user (non-root)
+RUN useradd -u 1001 -r -g 0 --create-home -s /sbin/nologin -c "Default app user" appuser \
+    && mkdir -p $HOME/.ansible/tmp $HOME/.ansible/galaxy_cache $HOME/.cache/pip \
+    && chown -R 1001:0 $HOME && chmod -R g=u $HOME
+
+# Install Helm
+RUN set -eux; \
+    curl -k -L -o /usr/local/bin/helm "https://artifactory/helm-${HELM_VERSION}" && \
+    chmod +x /usr/local/bin/helm && \
+    helm version --short || (echo "Helm install failed" && exit 1)
+
+# Install OpenShift CLI (oc)
+RUN set -eux; \
+    curl -k -L "https://artifactory/oc-${OC_CLI_VERSION}.tar" | tar -xv -C /usr/local/bin && \
+    chmod +x /usr/local/bin/oc && \
+    oc version --client || (echo "OC CLI install failed" && exit 1)
+
+# Copy requirements
+COPY python-req.txt galaxy-req.txt /tmp/
+
+# Install Python dependencies
+RUN set -eux; \
+    python3 -m pip install --no-cache-dir --index-url ${PIP_INDEX_URL} --upgrade -r /tmp/python-req.txt
+
+# Install Ansible Galaxy collections
+RUN set -eux; \
+    HTTPS_PROXY="${https_proxy}" \
+    HTTP_PROXY="${http_proxy}" \
+    NO_PROXY="${no_proxy}" \
+    ansible-galaxy collection install -r /tmp/galaxy-req.txt --force --ignore-certs -p /home/appuser/.ansible/collections \
+    && rm -rf /tmp/* /root/.cache
+
+# =========================================
+# Stage 2: Runtime image
+# =========================================
+FROM ${BASE_IMAGE}
+
+# Copy Python and tools from builder
+COPY --from=builder /usr/bin/python3.11 /usr/bin/python3.11
+COPY --from=builder /usr/bin/pip3.11 /usr/bin/pip3.11
+COPY --from=builder /usr/local /usr/local
+COPY --from=builder /home/appuser /home/appuser
+COPY --from=builder /usr/bin/oc /usr/local/bin/oc
+COPY --from=builder /usr/local/bin/helm /usr/local/bin/helm
+
+# Environment variables
+ENV HOME=/home/appuser \
+    PATH="$HOME/.local/bin:$PATH" \
+    ANSIBLE_LOCAL_TEMP=/home/appuser/.ansible/tmp \
+    PYTHONUNBUFFERED=1
+
+USER 1001
+WORKDIR /home/appuser
+
+ENTRYPOINT ["/bin/bash", "-c"]
+

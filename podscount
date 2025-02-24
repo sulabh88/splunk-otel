@@ -1,0 +1,12 @@
+echo -e "NODE\tRUNNING_PODS\tPOD_CAPACITY\t%_USED"
+
+oc get pods --all-namespaces -o wide --no-headers | \
+awk '$7!="" {count[$7]++} END {for (n in count) print n, count[n]}' | \
+while read node pods; do
+    capacity=$(oc get node $node -o jsonpath='{.status.capacity.pods}' 2>/dev/null)
+    # Default to 1 if capacity is missing to avoid division by 0
+    [[ -z "$capacity" ]] && capacity=1
+    percent=$((pods*100/capacity))
+    echo -e "$node\t$pods\t$capacity\t$percent%"
+done | column -t
+

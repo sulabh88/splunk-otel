@@ -1,0 +1,6 @@
+---
+egress_enabled: false
+namespace: ""
+egress_ips: []
+node_selector_label: "k8s.ovn.org/egress-assignable"
+

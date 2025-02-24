@@ -1,0 +1,6 @@
+---
+egress_enabled: "{{ lookup('env', 'EGRESS_ENABLED') | default('false') | bool }}"
+namespace: "{{ lookup('env', 'NAMESPACE') | default('default') }}"
+egress_ips: "{{ lookup('env', 'EGRESS_IPS') | default('[]') | from_yaml }}"
+cluster: "{{ lookup('env', 'CLUSTER') | default('unknown-cluster') }}"
+node_selector_label: "k8s.ovn.org/egress-assignable"

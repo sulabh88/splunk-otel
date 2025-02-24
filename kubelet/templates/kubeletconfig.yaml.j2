@@ -1,0 +1,11 @@
+apiVersion: machineconfiguration.openshift.io/v1
+kind: KubeletConfig
+metadata:
+  name: 99-autosize-{{ pool_name }}
+spec:
+  machineConfigPoolSelector:
+    matchLabels:
+      pools.operator.machineconfiguration.openshift.io/{{ pool_name }}: ""
+  kubeletConfig:
+    autoSizingReserved: true
+

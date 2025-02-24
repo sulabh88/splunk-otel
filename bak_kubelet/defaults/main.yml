@@ -1,0 +1,11 @@
+#SPDX-License-Identifier: MIT-0
+---
+# defaults file for kubelet
+
+---
+# Default variables
+fusion: false           # true if cluster is Fusion
+scale_cluster: false    # true if Fusion cluster has scale deployment
+odf_templates_path: "templates"
+vmware_templates_path: "templates"
+

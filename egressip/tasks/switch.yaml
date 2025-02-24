@@ -1,0 +1,33 @@
+#!/bin/bash
+
+NAMESPACE="ibm-fusion-ns"
+CLUSTER_NAME="my-cluster"
+EMAIL="you@example.com"
+
+TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
+
+# Get all statuses into one variable
+statuses=$(oc get switch -n "$NAMESPACE" -o custom-columns=STATUS:.status.status --no-headers)
+
+# Check if any status is NOT "login successful"
+if echo "$statuses" | grep -vq "login successful"; then
+    SUBJECT="Switch Login Failure Alert - $CLUSTER_NAME - $TIMESTAMP"
+    BODY="❌ Some switches in $CLUSTER_NAME did not login successfully.\n\nStatuses:\n\n$statuses"
+    echo -e "$BODY" | mail -s "$SUBJECT" "$EMAIL"
+    echo "$BODY"
+else
+    echo "✅ All switches in $CLUSTER_NAME are successful at $TIMESTAMP"
+fi
+*********
+statuses=$(oc get switch -n "$NAMESPACE" -o custom-columns=STATUS:.status.status --no-headers)
+
+# Remove blank lines, trim spaces
+clean_statuses=$(echo "$statuses" | sed '/^\s*$/d' | while read -r line; do echo "$line" | xargs; done)
+
+# Check for any failure
+if echo "$clean_statuses" | grep -vq "^login successful$"; then
+    echo "❌ Some switches failed"
+else
+    echo "✅ All switches successful"
+fi
+

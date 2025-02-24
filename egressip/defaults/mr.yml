@@ -1,0 +1,4 @@
+gitlab_project_id: "<YOUR_PROJECT_ID>"   # numeric project ID
+gitlab_token: "{{ lookup('env','GITLAB_TOKEN') }}"  # set in GitLab CI
+manifest_output_path: "/tmp/{{ namespace }}-egressip.yaml"
+

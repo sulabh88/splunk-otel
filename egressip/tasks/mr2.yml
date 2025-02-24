@@ -1,0 +1,61 @@
+---
+- name: Set branch name (unique per pipeline/job)
+  set_fact:
+    branch_name: "egress-manifest-{{ lookup('env','CI_JOB_ID') | default(ansible_date_time.iso8601_basic_short) }}"
+
+- name: Checkout a new branch
+  command: git checkout -b {{ branch_name }}
+  args:
+    chdir: "{{ lookup('env','CI_PROJECT_DIR') | default('.') }}"
+
+- name: Copy generated manifests into repo
+  copy:
+    src: "{{ role_path }}/files/{{ namespace }}/egress-{{ item }}.yaml"
+    dest: "{{ lookup('env','CI_PROJECT_DIR') | default('.') }}/roles/egress/files/{{ namespace }}/egress-{{ item }}.yaml"
+  loop: "{{ cluster_list }}"
+  ignore_errors: yes
+
+- name: Stage changes
+  command: git add .
+  args:
+    chdir: "{{ lookup('env','CI_PROJECT_DIR') | default('.') }}"
+
+- name: Commit changes (only if there are any)
+  command: git commit -m "Add/update Egress manifests for {{ namespace }}"
+  args:
+    chdir: "{{ lookup('env','CI_PROJECT_DIR') | default('.') }}"
+  register: commit_result
+  failed_when: false
+
+- name: Push branch to GitLab
+  command: git push origin {{ branch_name }}
+  args:
+    chdir: "{{ lookup('env','CI_PROJECT_DIR') | default('.') }}"
+  when: commit_result.rc == 0
+
+- name: Create Merge Request in GitLab
+  uri:
+    url: "{{ lookup('env','CI_API_V4_URL') }}/projects/{{ gitlab_project_id }}/merge_requests"
+    method: POST
+    headers:
+      PRIVATE-TOKEN: "{{ gitlab_token }}"
+    body:
+      source_branch: "{{ branch_name }}"
+      target_branch: "{{ gitlab_target_branch }}"
+      title: "Egress manifests update for {{ namespace }}"
+      description: "This MR adds or updates Egress manifests under roles/egress/files/{{ namespace }}/"
+    body_format: json
+    return_content: yes
+    status_code: [201, 409]
+  register: mr_result
+  when: commit_result.rc == 0
+
+- name: Show Merge Request URL
+  debug:
+    msg: >-
+      {% if mr_result.json.web_url is defined %}
+        Merge Request created: {{ mr_result.json.web_url }}
+      {% else %}
+        No new changes to commit, so no MR was created.
+      {% endif %}
+

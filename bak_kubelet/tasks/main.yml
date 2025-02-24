@@ -1,0 +1,133 @@
+#SPDX-License-Identifier: MIT-0
+---
+# tasks file for kubelet
+
+---
+# -----------------------------
+# Fusion cluster with Scale
+# -----------------------------
+- name: "Fusion cluster with scale: patch existing kubeletconfig 'ocpupgrade'"
+  when: fusion and scale_cluster
+  block:
+    - name: Get existing kubeletconfig 'ocpupgrade'
+      k8s_info:
+        api_version: machineconfiguration.openshift.io/v1
+        kind: KubeletConfig
+        name: ocpupgrade
+      register: fusion_scale_kc
+
+    - name: Patch kubeletconfig 'ocpupgrade'
+      when: fusion_scale_kc.resources | length > 0
+      k8s:
+        state: present
+        definition:
+          apiVersion: machineconfiguration.openshift.io/v1
+          kind: KubeletConfig
+          metadata:
+            name: ocpupgrade
+          spec:
+            kubeletConfig:
+              allowedUnsafeSysctls:
+                - "kernel.msg*"
+              autoSizingReserved: true
+
+# -----------------------------
+# Fusion cluster with ODF
+# -----------------------------
+- name: "Fusion cluster with ODF: apply master and worker templates"
+  when: fusion and not scale_cluster
+  block:
+    - name: Apply master kubeletconfig template
+      k8s:
+        state: present
+        definition: "{{ lookup('template', odf_templates_path + '/odf-master.yaml.j2') }}"
+
+    - name: Apply worker kubeletconfig template
+      k8s:
+        state: present
+        definition: "{{ lookup('template', odf_templates_path + '/odf-worker.yaml.j2') }}"
+
+# -----------------------------
+# VMware / Other clusters
+# -----------------------------
+- name: "VMware / other clusters: handle existing or missing kubeletconfigs"
+  when: not fusion
+  block:
+    - name: Get all existing kubeletconfigs
+      k8s_info:
+        api_version: machineconfiguration.openshift.io/v1
+        kind: KubeletConfig
+      register: all_kc
+
+    - name: Determine pool coverage
+      set_fact:
+        master_exists: "{{ all_kc.resources | selectattr('spec.machineConfigPoolSelector.matchLabels.master', 'defined') | list | length > 0 }}"
+        worker_exists: "{{ all_kc.resources | selectattr('spec.machineConfigPoolSelector.matchLabels.worker', 'defined') | list | length > 0 }}"
+
+    - name: Patch existing kubeletconfigs for master pool
+      loop: "{{ all_kc.resources }}"
+      when: "'master' in loop_item.spec.machineConfigPoolSelector.matchLabels.values()"
+      k8s:
+        state: present
+        definition:
+          apiVersion: machineconfiguration.openshift.io/v1
+          kind: KubeletConfig
+          metadata:
+            name: "{{ loop_item.metadata.name }}"
+          spec:
+            kubeletConfig:
+              allowedUnsafeSysctls:
+                - "kernel.msg*"
+              autoSizingReserved: true
+
+    - name: Patch existing kubeletconfigs for worker pool
+      loop: "{{ all_kc.resources }}"
+      when: "'worker' in loop_item.spec.machineConfigPoolSelector.matchLabels.values()"
+      k8s:
+        state: present
+        definition:
+          apiVersion: machineconfiguration.openshift.io/v1
+          kind: KubeletConfig
+          metadata:
+            name: "{{ loop_item.metadata.name }}"
+          spec:
+            kubeletConfig:
+              allowedUnsafeSysctls:
+                - "kernel.msg*"
+              autoSizingReserved: true
+
+    - name: Create KubeletConfig for master if missing
+      when: not master_exists
+      k8s:
+        state: present
+        definition: "{{ lookup('template', vmware_templates_path + '/vmware-master.yaml.j2') }}"
+
+    - name: Create KubeletConfig for worker if missing
+      when: not worker_exists
+      k8s:
+        state: present
+        definition: "{{ lookup('template', vmware_templates_path + '/vmware-worker.yaml.j2') }}"
+
+# -----------------------------
+# MCP Rollout Validation
+# -----------------------------
+- name: "Wait for master MCP rollout"
+  k8s_info:
+    api_version: machineconfiguration.openshift.io/v1
+    kind: MachineConfigPool
+    name: master
+  register: master_mcp
+  until: master_mcp.resources[0].status.conditions | selectattr('type','equalto','Updated') | selectattr('status','equalto','True') | list | length > 0
+  retries: 30
+  delay: 20
+
+- name: "Wait for worker MCP rollout"
+  k8s_info:
+    api_version: machineconfiguration.openshift.io/v1
+    kind: MachineConfigPool
+    name: worker
+  register: worker_mcp
+  until: worker_mcp.resources[0].status.conditions | selectattr('type','equalto','Updated') | selectattr('status','equalto','True') | list | length > 0
+  retries: 30
+  delay: 20
+

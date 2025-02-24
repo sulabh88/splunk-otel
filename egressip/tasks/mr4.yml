@@ -1,0 +1,52 @@
+---
+- hosts: localhost
+  gather_facts: false
+  vars:
+    # GitLab wiki repo URL (SSH or HTTPS with token)
+    wiki_repo_url: "git@gitlab.com:your-group/your-project.wiki.git"
+
+    # Local temp clone location
+    local_clone_dir: "/tmp/wiki_repo"
+
+    # List of namespaces and their manifest source paths
+    egress_manifests:
+      - namespace: "namespace1"
+        src: "roles/manifest_generator/files/namespace1/egress.yaml"
+      - namespace: "namespace2"
+        src: "roles/manifest_generator/files/namespace2/egress.yaml"
+
+  tasks:
+    - name: Ensure git is installed
+      package:
+        name: git
+        state: present
+
+    - name: Clone GitLab Wiki repo
+      git:
+        repo: "{{ wiki_repo_url }}"
+        dest: "{{ local_clone_dir }}"
+        version: "main"
+        force: yes
+
+    - name: Copy each namespace's egress.yaml into wiki folder
+      copy:
+        src: "{{ item.src }}"
+        dest: "{{ local_clone_dir }}/egress-manifest/{{ item.namespace }}/egress.yaml"
+      loop: "{{ egress_manifests }}"
+
+    - name: Stage wiki changes
+      command: git add egress-manifest/
+      args:
+        chdir: "{{ local_clone_dir }}"
+
+    - name: Commit wiki changes
+      command: git commit -m "Update wiki: add egress manifests for namespaces"
+      args:
+        chdir: "{{ local_clone_dir }}"
+      ignore_errors: yes  # skip if no changes
+
+    - name: Push wiki changes
+      command: git push origin main
+      args:
+        chdir: "{{ local_clone_dir }}"
+

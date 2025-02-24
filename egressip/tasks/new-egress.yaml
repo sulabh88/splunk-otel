@@ -1,0 +1,16 @@
+- name: Print Namespace, EgressIP and Node together
+  debug:
+    msg: "Namespace={{ ns }} EgressIP={{ ip }} Node={{ node }}"
+  loop: "{{ egressip_objects.resources | default([]) }}"
+  loop_control:
+    label: "{{ item.metadata.name | default('N/A') }}"
+  vars:
+    ns: "{{ item.spec.namespaceSelector.matchLabels['kubernetes.io/metadata.name'] | default('N/A') }}"
+    subitems: "{{ item.status.items | default([{'egressIP':'Pending','node':'Pending'}]) }}"
+  # inner loop using subitems
+  with_nested:
+    - "{{ subitems }}"
+  vars:
+    ip: "{{ item.0.egressIP | default('Pending') }}"
+    node: "{{ item.0.node | default('Pending') }}"
+
