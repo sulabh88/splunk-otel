@@ -1,0 +1,11 @@
+---
+- name: Check Mandatory variables
+  assert:
+    that:
+      - operator_state is defined
+      - operator_state in ["present", "absent"]
+      - operator_name is defined
+    fail_msg: >
+      operator_state must be set and must be in ["present", "absent"],
+      operator_name must be set,
+    success_msg: "Mandatory variables are OK"
