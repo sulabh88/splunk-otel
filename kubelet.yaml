@@ -1,0 +1,277 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Role: kubeletconfig_worker
+# Purpose: Safely roll out a KubeletConfig to the worker MCP across OpenShift clusters
+# Highlights:
+#   - Idempotent and drift-aware
+#   - Pre-checks: conflicting KubeletConfigs, MCP health, label presence
+#   - Safe rollout with progress gates and timeouts
+#   - Post-verify MCP + node-level alignment
+#   - Designed for 100+ clusters (kubeconfig/context aware)
+# ──────────────────────────────────────────────────────────────────────────────
+
+# ── roles/kubeletconfig_worker/defaults/main.yml
+---
+# Unique name for the KubeletConfig CR
+kubeletconfig_name: worker-kubeletconfig
+
+# Target MCP role (usually "worker")
+target_mcp: worker
+
+# Label selector the KubeletConfig will match against. Ensure MCP has these labels.
+# Per OpenShift docs, worker pools typically expose this label already; we enforce if missing.
+mcp_selector_labels:
+  "pools.operator.machineconfiguration.openshift.io/worker": ""
+
+# Kubelet settings to apply
+allowed_unsafe_sysctls:
+  - "kernel.msg*"
+auto_sizing_reserved: true
+
+# Timeouts / polling intervals
+mcp_update_timeout_seconds: 5400   # 90m
+mcp_poll_interval_seconds: 30
+
+# Node verification controls (set to false if clusters are huge to speed up)
+verify_nodes: true
+
+# Optional: explicitly set kubeconfig/context per cluster invocation
+k8s_kubeconfig: "{{ lookup('env','KUBECONFIG') | default(omit) }}"
+k8s_context: "{{ lookup('env','KUBECONTEXT') | default(omit) }}"
+
+# ── roles/kubeletconfig_worker/vars/main.yml (empty, for future)
+--- {}
+
+# ── roles/kubeletconfig_worker/meta/main.yml
+---
+dependencies: []
+
+# ── roles/kubeletconfig_worker/templates/kubeletconfig.yaml.j2
+---
+apiVersion: machineconfiguration.openshift.io/v1
+kind: KubeletConfig
+metadata:
+  name: {{ kubeletconfig_name }}
+spec:
+  machineConfigPoolSelector:
+    matchLabels:
+{% for k, v in mcp_selector_labels.items() %}
+      {{ k }}: {{ v | to_json }}
+{% endfor %}
+  kubeletConfig:
+    allowedUnsafeSysctls:
+{% for s in allowed_unsafe_sysctls %}
+      - {{ s | to_json }}
+{% endfor %}
+    autoSizingReserved: {{ auto_sizing_reserved | ternary('true','false') }}
+
+# ── roles/kubeletconfig_worker/tasks/main.yml
+---
+- name: "Include preflight checks"
+  ansible.builtin.import_tasks: prechecks.yml
+
+- name: "Apply/Update KubeletConfig"
+  ansible.builtin.import_tasks: apply.yml
+
+- name: "Verify rollout completion and health"
+  ansible.builtin.import_tasks: verify.yml
+
+# ── roles/kubeletconfig_worker/tasks/prechecks.yml
+---
+- name: "Gather target MCP"
+  kubernetes.core.k8s_info:
+    api_version: machineconfiguration.openshift.io/v1
+    kind: MachineConfigPool
+    name: "{{ target_mcp }}"
+    kubeconfig: "{{ k8s_kubeconfig | default(omit) }}"
+    context: "{{ k8s_context | default(omit) }}"
+  register: _mcp
+
+- name: "Fail if MCP not found"
+  ansible.builtin.fail:
+    msg: "MachineConfigPool '{{ target_mcp }}' not found."
+  when: _mcp.resources | length == 0
+
+- name: "Ensure MCP has required labels for selector"
+  vars:
+    merged_labels: "{{ (_mcp.resources[0].metadata.labels | default({})) | combine(mcp_selector_labels, recursive=True) }}"
+  kubernetes.core.k8s:
+    api_version: machineconfiguration.openshift.io/v1
+    kind: MachineConfigPool
+    name: "{{ target_mcp }}"
+    definition:
+      metadata:
+        labels: "{{ merged_labels }}"
+    kubeconfig: "{{ k8s_kubeconfig | default(omit) }}"
+    context: "{{ k8s_context | default(omit) }}"
+    apply: true
+
+- name: "Check for conflicting KubeletConfigs selecting same MCP"
+  kubernetes.core.k8s_info:
+    api_version: machineconfiguration.openshift.io/v1
+    kind: KubeletConfig
+    kubeconfig: "{{ k8s_kubeconfig | default(omit) }}"
+    context: "{{ k8s_context | default(omit) }}"
+  register: _all_kubeletconfigs
+
+- name: "Find conflicts"
+  vars:
+    selecting: >-
+      {{ _all_kubeletconfigs.resources
+         | selectattr('spec.machineConfigPoolSelector.matchLabels', 'defined')
+         | selectattr('spec.machineConfigPoolSelector.matchLabels', 'contains', mcp_selector_labels)
+         | map(attribute='metadata.name') | list }}
+  ansible.builtin.set_fact:
+    _conflicting_kubeletconfigs: "{{ selecting | difference([kubeletconfig_name]) }}"
+
+- name: "Fail if conflicting KubeletConfigs exist"
+  ansible.builtin.fail:
+    msg: >-
+      Found other KubeletConfig(s) selecting the same MCP ({{ target_mcp }}): {{ _conflicting_kubeletconfigs | join(', ') }}.
+      OpenShift supports only one KubeletConfig per MCP. Remove/merge them or change selectors.
+  when: _conflicting_kubeletconfigs | length > 0
+
+- name: "Check Machine Config Operator health"
+  kubernetes.core.k8s_info:
+    api_version: config.openshift.io/v1
+    kind: ClusterOperator
+    name: machine-config
+    kubeconfig: "{{ k8s_kubeconfig | default(omit) }}"
+    context: "{{ k8s_context | default(omit) }}"
+  register: _mco
+
+- name: "Fail if MCO is Degraded"
+  ansible.builtin.fail:
+    msg: "Machine Config Operator is Degraded; aborting rollout."
+  when: >-
+    (_mco.resources[0].status.conditions | selectattr('type','equalto','Degraded') | list)[0].status == 'True'
+
+# ── roles/kubeletconfig_worker/tasks/apply.yml
+---
+- name: "Render and apply KubeletConfig"
+  kubernetes.core.k8s:
+    state: present
+    template: kubeletconfig.yaml.j2
+    kubeconfig: "{{ k8s_kubeconfig | default(omit) }}"
+    context: "{{ k8s_context | default(omit) }}"
+    apply: true
+
+- name: "Wait for MCP to start Updating"
+  vars:
+    _deadline: "{{ (ansible_date_time.epoch | int) + mcp_update_timeout_seconds }}"
+  until: >-
+    (_mcp_status.resources[0].status.conditions | selectattr('type','equalto','Updating') | list)[0].status == 'True'
+    or
+    (_mcp_status.resources[0].status.conditions | selectattr('type','equalto','Updated') | list)[0].status == 'True'
+    or (ansible_date_time.epoch | int) > _deadline
+  retries: "{{ (mcp_update_timeout_seconds // mcp_poll_interval_seconds) | int }}"
+  delay: "{{ mcp_poll_interval_seconds }}"
+  kubernetes.core.k8s_info:
+    api_version: machineconfiguration.openshift.io/v1
+    kind: MachineConfigPool
+    name: "{{ target_mcp }}"
+    kubeconfig: "{{ k8s_kubeconfig | default(omit) }}"
+    context: "{{ k8s_context | default(omit) }}"
+  register: _mcp_status
+
+# ── roles/kubeletconfig_worker/tasks/verify.yml
+---
+- name: "Wait for MCP '{{ target_mcp }}' to be fully Updated and Healthy"
+  vars:
+    _deadline: "{{ (ansible_date_time.epoch | int) + mcp_update_timeout_seconds }}"
+  until: >-
+    ((_mcp_done.resources[0].status.conditions | selectattr('type','equalto','Updated') | list)[0].status == 'True') and
+    ((_mcp_done.resources[0].status.conditions | selectattr('type','equalto','Degraded') | list)[0].status == 'False') and
+    (_mcp_done.resources[0].status.machineCount | default(0)) == (_mcp_done.resources[0].status.updatedMachineCount | default(-1))
+    or (ansible_date_time.epoch | int) > _deadline
+  retries: "{{ (mcp_update_timeout_seconds // mcp_poll_interval_seconds) | int }}"
+  delay: "{{ mcp_poll_interval_seconds }}"
+  kubernetes.core.k8s_info:
+    api_version: machineconfiguration.openshift.io/v1
+    kind: MachineConfigPool
+    name: "{{ target_mcp }}"
+    kubeconfig: "{{ k8s_kubeconfig | default(omit) }}"
+    context: "{{ k8s_context | default(omit) }}"
+  register: _mcp_done
+
+- name: "Fail if MCP did not converge in time"
+  ansible.builtin.fail:
+    msg: >-
+      MCP '{{ target_mcp }}' failed to fully update within {{ mcp_update_timeout_seconds }}s. Current status:
+      {{ _mcp_done.resources[0].status | to_nice_json }}
+  when: >-
+    not (((_mcp_done.resources[0].status.conditions | selectattr('type','equalto','Updated') | list)[0].status == 'True') and
+         ((_mcp_done.resources[0].status.conditions | selectattr('type','equalto','Degraded') | list)[0].status == 'False') and
+         (_mcp_done.resources[0].status.machineCount | default(0)) == (_mcp_done.resources[0].status.updatedMachineCount | default(-1)))
+
+- name: "(Optional) Verify all worker nodes have desired renderedConfig"
+  when: verify_nodes
+  block:
+    - name: "Get desired rendered config name from MCP"
+      ansible.builtin.set_fact:
+        _desired_config: "{{ _mcp_done.resources[0].status.configuration.name }}"
+
+    - name: "List worker nodes"
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Node
+        label_selectors:
+          - node-role.kubernetes.io/{{ target_mcp }}
+        kubeconfig: "{{ k8s_kubeconfig | default(omit) }}"
+        context: "{{ k8s_context | default(omit) }}"
+      register: _nodes
+
+    - name: "Assert each node has the desired rendered config"
+      vars:
+        node_cfg: "{{ item.metadata.annotations['machineconfiguration.openshift.io/currentConfig'] | default('') }}"
+      ansible.builtin.assert:
+        that:
+          - node_cfg == _desired_config
+        success_msg: "Node {{ item.metadata.name }} aligned to {{ _desired_config }}"
+        fail_msg: "Node {{ item.metadata.name }} not aligned. Has {{ node_cfg }}, wants {{ _desired_config }}"
+      loop: "{{ _nodes.resources }}"
+
+# ── roles/kubeletconfig_worker/handlers/main.yml (reserved for future)
+--- []
+
+# ── playbooks/example-multicluster.yml
+---
+# Usage: ansible-playbook -i inventory example-multicluster.yml
+# Inventory should set kubeconfig/context per cluster. See inventory samples below.
+- hosts: ocp_clusters
+  gather_facts: false
+  vars:
+    # Override per cluster/group as needed
+    kubeletconfig_name: worker-kubeletconfig
+    target_mcp: worker
+    allowed_unsafe_sysctls: ["kernel.msg*"]
+    auto_sizing_reserved: true
+  roles:
+    - role: kubeletconfig_worker
+
+# ── inventory/hosts.yml (sample)
+# Define as many clusters as needed; each host points to a kubeconfig/context
+---
+all:
+  children:
+    ocp_clusters:
+      hosts:
+        cluster-a:
+          k8s_kubeconfig: /path/to/cluster-a.kubeconfig
+          k8s_context: "cluster-a-admin"
+        cluster-b:
+          k8s_kubeconfig: /path/to/cluster-b.kubeconfig
+          k8s_context: "cluster-b-admin"
+        cluster-c:
+          k8s_kubeconfig: /path/to/cluster-c.kubeconfig
+          k8s_context: "cluster-c-admin"
+
+# ── README.md (key notes)
+# 1) Security: allowedUnsafeSysctls enables sysctls (here: kernel.msg*) on workers. Use only if required.
+# 2) Conflicts: OpenShift supports 1 KubeletConfig per MCP. This role hard-fails if others already select the same MCP.
+# 3) Labels: The role ensures the worker MCP has the selector labels; it merges labels atomically with server-side apply.
+# 4) Rollout gates: The role waits until MCP Updated=True, Degraded=False, and updatedMachineCount==machineCount.
+# 5) Node verify: Optionally asserts each node's currentConfig equals MCP.status.configuration.name.
+# 6) Scale: Works across 100+ clusters; inventory binds each to kubeconfig/context; timeouts are adjustable.
+# 7) Idempotency: Server-side apply prevents needless rollouts if spec is unchanged.
+# 8) Rollback: To revert, remove/adjust the KubeletConfig and re-run; the MCO will reconcile back.
+

@@ -1,0 +1,92 @@
+#!/bin/bash
+
+# Description: Enable kdump on selected compute nodes with crashkernel=1024M
+# Usage:
+#   ./enable-kdump.sh node1 node2 node3
+#   OR
+#   ./enable-kdump.sh -f nodes.txt
+
+set -euo pipefail
+
+# -------------------------
+# Parse input
+# -------------------------
+NODES=()
+
+if [[ "$1" == "-f" ]]; then
+    NODE_FILE="$2"
+    if [[ ! -f "$NODE_FILE" ]]; then
+        echo "Node file $NODE_FILE not found. Exiting."
+        exit 1
+    fi
+    while IFS= read -r line; do
+        [[ "$line" =~ ^#.*$ || -z "$line" ]] && continue
+        NODES+=("$line")
+    done < "$NODE_FILE"
+else
+    NODES=("$@")
+fi
+
+if [ ${#NODES[@]} -eq 0 ]; then
+    echo "No nodes provided. Exiting."
+    exit 1
+fi
+
+# -------------------------
+# Process each node
+# -------------------------
+for nodename in "${NODES[@]}"; do
+    echo "======================================="
+    echo "Processing node: $nodename"
+
+    # Check if kdump is already active
+    kd_status=$(oc debug node/$nodename -- chroot /host systemctl is-active kdump || echo "inactive")
+    if [[ "$kd_status" == "active" ]]; then
+        echo "✅ kdump already enabled on $nodename, skipping..."
+        continue
+    fi
+
+    echo "⏳ kdump not active on $nodename, enabling..."
+
+    # 1. Append crashkernel using rpm-ostree
+    oc debug node/$nodename -- chroot /host /bin/bash -c "
+        echo '>>> Appending crashkernel=1024M'
+        rpm-ostree kargs --append='crashkernel=1024M'
+    "
+
+    # 2. Reboot node
+    echo "Rebooting node: $nodename"
+    oc debug node/$nodename -- chroot /host systemctl reboot || true
+
+    # 3. Wait until node is Ready (extended timeout)
+    echo "Waiting for node $nodename to become Ready..."
+    timeout=$((15*60))   # 15 minutes
+    elapsed=0
+    while true; do
+        status=$(oc get node $nodename -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "Unknown")
+        if [[ "$status" == "True" ]]; then
+            echo "✅ Node $nodename is Ready."
+            break
+        fi
+        if [ $elapsed -ge $timeout ]; then
+            echo "❌ Timeout: Node $nodename did not become Ready in 15 minutes."
+            break
+        fi
+        echo -n "."
+        sleep 10
+        elapsed=$((elapsed+10))
+    done
+
+    # 4. Enable kdump after reboot
+    echo "Enabling kdump on $nodename"
+    oc debug node/$nodename -- chroot /host /bin/bash -c "
+        systemctl enable --now kdump || echo 'Failed to start kdump, check crashkernel settings'
+        systemctl is-active kdump
+    "
+
+    echo "Finished processing node: $nodename"
+    echo "======================================="
+done
+
+echo "✅ Kdump enable process completed on all selected nodes."
+

@@ -1,0 +1,10 @@
+disk_size_gb: 100  # Default disk size in GB
+openshift_cluster_name: "my-openshift-cluster"
+vmware_datacenter: "Datacenter1"
+vmware_cluster: "Compute-Cluster"
+vmware_datastore: "Datastore1"
+vmware_username: "admin@vsphere.local"
+vmware_password: "your-password"
+vmware_host: "vcenter.example.com"
+infra_nodes_pattern: "infra-node-*"
+
