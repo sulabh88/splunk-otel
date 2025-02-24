@@ -1,0 +1,46 @@
+## Managing Kubelet Configurations in OpenShift Clusters
+
+This document provides a comprehensive guide on how to append, add, or modify `KubeletConfig` in various OpenShift cluster environments to incorporate `allowedUnsafeSysctls` for `kernel.msg*` and to enable `autoSizingReserved`. These instructions are tailored for three distinct OpenShift cluster types: Fusion with Scale, Fusion with ODF, and VMware clusters.
+
+The primary mechanism for customizing node settings in OpenShift is through the Machine Config Operator (MCO), which manages `MachineConfig` objects. A `KubeletConfig` custom resource is a user-friendly way to introduce kubelet modifications, which the MCO then translates into `MachineConfig` objects and applies to the designated nodes.
+
+**Important Note:** Any changes to the Kubelet configuration will result in a rolling reboot of the nodes in the targeted machine config pool to apply the new settings.
+
+### Core Parameters to be Added
+
+*   **`allowedUnsafeSysctls`**: This parameter allows certain "unsafe" kernel parameters to be set on pods. The requirement is to allow `kernel.msg*`.
+*   **`autoSizingReserved`**: When set to `true`, OpenShift automatically determines and allocates system-reserved resources on the nodes, which can help prevent node failures due to resource starvation.
+
+---
+
+### Fusion with Scale Clusters
+
+For Fusion with Scale clusters that already have an existing `KubeletConfig` targeting both master and worker nodes (with the selector `ocp411`), the following steps outline how to append the required parameters.
+
+It is crucial to retrieve the existing `KubeletConfig` and add the new parameters to it. Creating a new, separate `KubeletConfig` targeting the same nodes can lead to conflicts.
+
+**To modify the existing `KubeletConfig`:**
+
+1.  **Identify and export the existing `KubeletConfig`:**
+    ```bash
+    oc get kubeletconfig <name-of-existing-kubeletconfig> -o yaml > existing-kubeletconfig.yaml
+    ```
+
+2.  **Edit the exported YAML file** (`existing-kubeletconfig.yaml`) to include the `allowedUnsafeSysctls` and `autoSizingReserved` parameters within the `spec.kubeletConfig` section.
+
+**Modified `KubeletConfig` YAML:**
+
+```yaml
+apiVersion: machineconfiguration.openshift.io/v1
+kind: KubeletConfig
+metadata:
+  name: <name-of-existing-kubeletconfig>
+spec:
+  machineConfigPoolSelector:
+    matchLabels:
+      ocp411: "" # This selector targets both master and worker nodes
+  kubeletConfig:
+    # --- Other existing kubelet configurations will be here ---
+    allowedUnsafeSysctls:
+      - "kernel.msg*"
+    autoSizingReserved: true

@@ -1,0 +1,39 @@
+```yaml
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: curl-daemonset
+  namespace: default
+  labels:
+    app: curl-test
+spec:
+  selector:
+    matchLabels:
+      app: curl-test
+  template:
+    metadata:
+      labels:
+        app: curl-test
+    spec:
+      containers:
+      - name: curl-container
+        image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            microdnf install -y curl &&
+            while true; do
+              echo "$(date '+%Y-%m-%d %H:%M:%S'): Curling https://google.com" &&
+              timeout 60 curl -o /dev/null -s -w "DNS Lookup Time: %{time_namelookup}s\nConnect Time: %{time_connect}s\n" https://google.com || 
+              { echo "$(date '+%Y-%m-%d %H:%M:%S'): Curl failed or timed out after 60s, stopping"; exit 1; } &&
+              sleep 1;
+            done
+        resources:
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+      restartPolicy: Always
+```
