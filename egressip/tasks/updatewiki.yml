@@ -1,0 +1,64 @@
+---
+- name: Ensure git is installed
+  package:
+    name: git
+    state: present
+
+- name: Clone GitLab Wiki repo
+  git:
+    repo: "{{ wiki_repo_url }}"
+    dest: "{{ local_clone_dir }}"
+    version: "main"
+    force: yes
+
+- name: Ensure target directory exists in wiki
+  file:
+    path: "{{ local_clone_dir }}/Egress/{{ namespace }}/files"
+    state: directory
+    recurse: yes
+
+- name: Copy current namespace manifest into wiki
+  copy:
+    src: "{{ manifest_src }}"
+    dest: "{{ local_clone_dir }}/Egress/{{ namespace }}/files/egress.yaml"
+
+- name: Read existing index.md if present
+  slurp:
+    src: "{{ local_clone_dir }}/Egress/index.md"
+  register: existing_index
+  ignore_errors: yes
+
+- name: Set existing index content
+  set_fact:
+    index_content: "{{ existing_index.content | b64decode | default('') }}"
+
+- name: Append current namespace to index if not already present
+  set_fact:
+    index_content: |
+      {{ index_content }}
+      {% if namespace not in index_content %}
+      - Namespace: {{ namespace }} / {{ cluster }}
+        [View Manifest](./{{ namespace }}/files/egress.yaml)
+      {% endif %}
+
+- name: Write updated index.md
+  copy:
+    content: "{{ index_content }}"
+    dest: "{{ local_clone_dir }}/Egress/index.md"
+
+- name: Stage wiki changes
+  command: git add Egress/
+  args:
+    chdir: "{{ local_clone_dir }}"
+
+- name: Commit wiki changes
+  command: git commit -m "Update wiki: add egress manifest for {{ namespace }} / {{ cluster }}"
+  args:
+    chdir: "{{ local_clone_dir }}"
+  ignore_errors: yes  # skip if no changes
+
+- name: Push wiki changes
+  command: git push origin main
+  args:
+    chdir: "{{ local_clone_dir }}"
+

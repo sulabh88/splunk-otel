@@ -1,0 +1,34 @@
+- name: Switch to designated branch
+  command: git checkout egress-manifest
+  args:
+    chdir: "{{ lookup('env','CI_PROJECT_DIR') | default('.') }}"
+
+- name: Copy generated manifests into repo
+  copy:
+    src: "{{ role_path }}/files/{{ namespace }}/{{ namespace }}-{{ cluster }}-egress.yaml"
+    dest: "{{ lookup('env','CI_PROJECT_DIR') | default('.') }}/roles/egress/files/{{ namespace }}/{{ namespace }}-{{ cluster }}-egress.yaml"
+
+- name: Stage changes
+  command: git add roles/egress/files/{{ namespace }}/
+  args:
+    chdir: "{{ lookup('env','CI_PROJECT_DIR') | default('.') }}"
+
+- name: Commit changes if any
+  command: git commit -m "Update Egress manifests for {{ namespace }} / {{ cluster }}"
+  args:
+    chdir: "{{ lookup('env','CI_PROJECT_DIR') | default('.') }}"
+  register: commit_result
+  failed_when: false
+- name: Configure Git remote with token
+  command: >
+    git remote set-url origin
+    https://oauth2:{{ gitlab_token }}@gitlab.com/{{ gitlab_namespace }}/{{ gitlab_repo }}.git
+  args:
+    chdir: "{{ lookup('env','CI_PROJECT_DIR') | default('.') }}"
+  when: commit_result.rc == 0
+- name: Push changes to remote
+  command: git push origin egress-manifest
+  args:
+    chdir: "{{ lookup('env','CI_PROJECT_DIR') | default('.') }}"
+  when: commit_result.rc == 0
+

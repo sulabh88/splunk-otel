@@ -1,0 +1,17 @@
+#SPDX-License-Identifier: MIT-0
+---
+# Path to kubeconfig (can be overridden per host via inventory vars)
+kubeconfig_path: "{{ lookup('env', 'KUBECONFIG') | default('~/.kube/config', true) }}"
+
+# Candidate pools to check; we’ll detect which ones exist in cluster
+candidate_pools:
+  - worker
+  - master        # use 'control-plane' in 4.13+ if needed
+  - infra
+
+# MaxUnavailable tuning for MCP rollouts (null = leave as-is)
+mcp_max_unavailable: null
+
+# Skip pools with explicit systemReserved
+skip_if_system_reserved: true
+

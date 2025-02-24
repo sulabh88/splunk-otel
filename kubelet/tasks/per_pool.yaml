@@ -1,0 +1,95 @@
+- name: Ensure MCP {{ target_mcp.metadata.name }} has standard selector label
+  vars:
+    expected_key: "pools.operator.machineconfiguration.openshift.io/{{ target_mcp.metadata.name }}"
+  kubernetes.core.k8s:
+    state: merge
+    api_version: machineconfiguration.openshift.io/v1
+    kind: MachineConfigPool
+    name: "{{ target_mcp.metadata.name }}"
+    definition:
+      metadata:
+        labels:
+          "{{ expected_key }}": ""
+
+- name: Set selector vars
+  set_fact:
+    pool_name: "{{ target_mcp.metadata.name }}"
+    pool_label_key: "pools.operator.machineconfiguration.openshift.io/{{ target_mcp.metadata.name }}"
+    pool_label_val: ""
+
+- name: Fetch existing KubeletConfigs
+  kubernetes.core.k8s_info:
+    api_version: machineconfiguration.openshift.io/v1
+    kind: KubeletConfig
+  register: kc_info
+
+- name: Find a KubeletConfig selecting this MCP
+  vars:
+    matches: >-
+      {{ kc_info.resources
+         | selectattr('spec.machineConfigPoolSelector.matchLabels.' ~ pool_label_key, 'defined')
+         | selectattr('spec.machineConfigPoolSelector.matchLabels.' ~ pool_label_key, 'equalto', pool_label_val)
+         | list }}
+  set_fact:
+    existing_kc: "{{ matches | first if matches|length>0 else omit }}"
+
+- name: Skip if existing KC has systemReserved (per policy)
+  when:
+    - existing_kc is defined
+    - skip_if_system_reserved
+    - existing_kc.spec.kubeletConfig.systemReserved is defined
+  ansible.builtin.debug:
+    msg: "Skipping pool {{ pool_name }}: existing systemReserved is defined."
+
+- name: Create KubeletConfig if none exists
+  when: existing_kc is not defined
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template','kubeletconfig.yaml.j2') }}"
+
+- name: Patch existing KubeletConfig to set autoSizingReserved
+  when:
+    - existing_kc is defined
+    - not (existing_kc.spec.kubeletConfig.systemReserved is defined and skip_if_system_reserved)
+    - not (existing_kc.spec.kubeletConfig.autoSizingReserved | default(false))
+  kubernetes.core.k8s:
+    state: merge
+    api_version: machineconfiguration.openshift.io/v1
+    kind: KubeletConfig
+    name: "{{ existing_kc.metadata.name }}"
+    definition:
+      spec:
+        kubeletConfig:
+          autoSizingReserved: true
+
+- name: Wait until MCP {{ pool_name }} starts updating
+  kubernetes.core.k8s_info:
+    api_version: machineconfiguration.openshift.io/v1
+    kind: MachineConfigPool
+    name: "{{ pool_name }}"
+  register: mcp_status
+  until: mcp_status.resources[0].status.conditions
+           | selectattr('type','equalto','Updating')
+           | selectattr('status','equalto','True')
+           | list | length > 0
+  retries: 30
+  delay: 10
+
+- name: Wait until MCP {{ pool_name }} is Updated and not Degraded
+  kubernetes.core.k8s_info:
+    api_version: machineconfiguration.openshift.io/v1
+    kind: MachineConfigPool
+    name: "{{ pool_name }}"
+  register: mcp_done
+  until:
+    - (mcp_done.resources[0].status.conditions
+         | selectattr('type','equalto','Updated')
+         | selectattr('status','equalto','True')
+         | list | length) > 0
+    - (mcp_done.resources[0].status.conditions
+         | selectattr('type','equalto','Degraded')
+         | selectattr('status','equalto','False')
+         | list | length) > 0
+  retries: 180
+  delay: 20
+
