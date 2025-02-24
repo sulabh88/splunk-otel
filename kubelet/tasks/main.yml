@@ -1,0 +1,35 @@
+- name: Set KUBECONFIG for this host
+  ansible.builtin.set_env:
+    KUBECONFIG: "{{ kubeconfig_path }}"
+
+- name: Gather MCPs
+  kubernetes.core.k8s_info:
+    api_version: machineconfiguration.openshift.io/v1
+    kind: MachineConfigPool
+  register: mcp_info
+
+- name: Build target pools list from cluster
+  set_fact:
+    target_mcps: >-
+      {{ mcp_info.resources
+         | selectattr('metadata.name', 'in', candidate_pools)
+         | list }}
+
+- name: Optionally adjust maxUnavailable
+  when: mcp_max_unavailable is not none
+  kubernetes.core.k8s:
+    state: merge
+    api_version: machineconfiguration.openshift.io/v1
+    kind: MachineConfigPool
+    name: "{{ item.metadata.name }}"
+    definition:
+      spec:
+        maxUnavailable: "{{ mcp_max_unavailable }}"
+  loop: "{{ target_mcps }}"
+
+- name: Process each pool
+  include_tasks: per_pool.yml
+  loop: "{{ target_mcps }}"
+  loop_control:
+    loop_var: target_mcp
+

@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: curl-pod
+  namespace: default
+  labels:
+    app: curl-test
+spec:
+  containers:
+  - name: curl-container
+    image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+    command: ["/bin/sh", "-c"]
+    args:
+      - |
+        microdnf install -y curl &&
+        curl -o /dev/null -s -w "DNS Lookup Time: %{time_namelookup}s\nConnect Time: %{time_connect}s\n" https://google.com &&
+        sleep infinity
+    resources:
+      limits:
+        cpu: "500m"
+        memory: "512Mi"
+      requests:
+        cpu: "100m"
+        memory: "128Mi"
+  restartPolicy: Never
