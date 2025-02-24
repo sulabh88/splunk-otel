@@ -1,0 +1,148 @@
+---
+- name: Only run egress tasks if enabled
+  debug:
+    msg: "Egress is disabled, skipping."
+  when: not egress_enabled
+  tags: skip_egress
+
+- block:
+    - name: Ensure directory exists for namespace egress manifests
+      file:
+        path: "roles/egressip/files/namespace"
+        state: directory
+
+    - name: Label worker nodes if missing
+      k8s_facts:
+        api_version: v1
+        kind: Node
+      register: worker_nodes
+
+    - name: Label worker nodes with egress assignable
+      k8s:
+        api_version: v1
+        kind: Node
+        name: "{{ item.metadata.name }}"
+        definition:
+          metadata:
+            labels:
+              {{ node_selector_label }}: "true"
+      loop: "{{ worker_nodes.resources | selectattr('metadata.labels.node-role.kubernetes.io/worker','defined') | list }}"
+      when: item.metadata.labels[node_selector_label] is not defined
+
+    - name: Create namespace-specific egressip manifest
+      copy:
+        content: "{{ lookup('template', 'egressip.yaml.j2') }}"
+        dest: "roles/egressip/files/namespace/{{ namespace }}-egress.yaml"
+
+    - name: Apply egressip object
+      k8s:
+        state: present
+        definition: "{{ lookup('template', 'egressip.yaml.j2') }}"
+    
+    - name: Post-check: Verify egress IP assignment
+      shell: |
+        oc get egressip {{ namespace }}-egress -o jsonpath='{.status.items[*].egressIPs}'
+      register: egressip_status
+      changed_when: false
+
+    - name: Debug egress IP assignment
+      debug:
+        msg: "EgressIPs assigned: {{ egressip_status.stdout }}"
+  when: egress_enabled
+
+
+    - name: Apply EgressIP object for namespace
+      k8s:
+        state: present
+        definition: "{{ lookup('template', 'egressip.yaml.j2') }}"
+
+    - name: Get EgressIP details (IPs and assigned nodes)
+      shell: |
+        oc get egressip {{ namespace }}-egress -o json
+      register: egressip_json
+      changed_when: false
+
+    - name: Parse EgressIP assignment into a list of dicts
+      set_fact:
+        egress_assignments: >-
+          {{
+            egressip_json.stdout | from_json
+            | json_query('status.items[].{ip: egressIPs[0], node: node}')
+          }}
+
+    - name: Show which IPs are assigned to which nodes
+      debug:
+        msg: >-
+          {% for item in egress_assignments %}
+          Egress IP {{ item.ip }} → {{ item.node }}
+          {% endfor %}
+  when: egress_enabled
+
+*************************************next code************
+---
+# tasks/main.yml
+
+# If egress is not enabled, skip everything
+- name: Skip egress configuration when disabled
+  debug:
+    msg: "Egress configuration is disabled. Skipping tasks."
+  when: not egress_enabled
+
+# Run only when egress is enabled
+- block:
+
+    - name: Make sure directory exists to store egress manifests
+      file:
+        path: "roles/egressip/files/namespace"
+        state: directory
+
+    - name: Collect all worker nodes
+      k8s_facts:
+        api_version: v1
+        kind: Node
+      register: worker_nodes
+
+    - name: Add egress-assignable label to worker nodes if missing
+      k8s:
+        api_version: v1
+        kind: Node
+        name: "{{ item.metadata.name }}"
+        definition:
+          metadata:
+            labels:
+              "{{ node_selector_label }}": "true"
+      loop: "{{ worker_nodes.resources | selectattr('metadata.labels.node-role.kubernetes.io/worker','defined') | list }}"
+      when: item.metadata.labels[node_selector_label] is not defined
+
+    - name: Generate manifest file for this namespace
+      copy:
+        content: "{{ lookup('template', 'egressip.yaml.j2') }}"
+        dest: "roles/egressip/files/namespace/{{ namespace }}-egress.yaml"
+
+    - name: Apply EgressIP object for namespace
+      k8s:
+        state: present
+        definition: "{{ lookup('template', 'egressip.yaml.j2') }}"
+
+    - name: Get EgressIP details (IPs and assigned nodes)
+      shell: |
+        oc get egressip {{ namespace }}-egress -o json
+      register: egressip_json
+      changed_when: false
+
+    - name: Parse EgressIP assignment into a list of dicts
+      set_fact:
+        egress_assignments: >-
+          {{
+            egressip_json.stdout | from_json
+            | json_query('status.items[].{ip: egressIPs[0], node: node}')
+          }}
+
+    - name: Show which IPs are assigned to which nodes
+      debug:
+        msg: >-
+          {% for item in egress_assignments %}
+          Egress IP {{ item.ip }} → {{ item.node }}
+          {% endfor %}
+  when: egress_enabled
+

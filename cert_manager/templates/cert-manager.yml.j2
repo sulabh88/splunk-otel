@@ -1,0 +1,58 @@
+# Source: cert-manager/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cert-manager
+  namespace: "cert-manager"
+  labels:
+    app: cert-manager
+    app.kubernetes.io/name: cert-manager
+    app.kubernetes.io/instance: cert-manager
+    app.kubernetes.io/component: "controller"
+    app.kubernetes.io/version: "v1.7.1"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cert-manager
+      app.kubernetes.io/instance: cert-manager
+      app.kubernetes.io/component: "controller"
+  template:
+    metadata:
+      labels:
+        app: cert-manager
+        app.kubernetes.io/name: cert-manager
+        app.kubernetes.io/instance: cert-manager
+        app.kubernetes.io/component: "controller"
+        app.kubernetes.io/version: "v1.7.1"
+      annotations:
+        prometheus.io/path: "/metrics"
+        prometheus.io/scrape: 'true'
+        prometheus.io/port: '9402'
+    spec:
+      serviceAccountName: cert-manager
+      securityContext:
+        
+        runAsNonRoot: true
+      containers:
+        - name: cert-manager
+          image: "docker.odyssey.apps.csintra.net/jetstack/cert-manager-controller:v1.7.1"
+          imagePullPolicy: IfNotPresent
+          args:
+          - --v=2
+          - --cluster-resource-namespace=$(POD_NAMESPACE)
+          - --leader-election-namespace=kube-system
+          ports:
+          - containerPort: 9402
+            protocol: TCP
+          env:
+          - name: POD_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+{% if ocp4_cluster_config['datacenter'] == 'N18' and ocp4_cluster_config['network_zone'] in ["ciBasic", "ciPlus", "ciPlus_CH"] %}
+          - name: https_proxy
+            value: http://intranet-proxy.ch.hedani.net:8080
+          - name: no_proxy
+            value: 172.30.0.1
+{% endif %}
