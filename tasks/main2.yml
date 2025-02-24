@@ -1,0 +1,60 @@
+---
+otel_splunk_helm:
+  name: "otel-splunk"
+  namespace: "monitoring"
+  chart_path: "files/opentelemetry-collector"
+  values_file: "values.yaml"
+  vault_address: "http://vault.example.com:8200"
+  vault_token: "your-vault-token"
+  vault_path: "secret/data/otel-splunk"
+  hec_token_key: "hec_token"
+
+---
+- name: Get HEC Token from Vault
+  uri:
+    url: "{{ otel_splunk_helm.vault_address }}/v1/{{ otel_splunk_helm.vault_path }}"
+    method: GET
+    headers:
+      X-Vault-Token: "{{ otel_splunk_helm.vault_token }}"
+    return_content: yes
+  register: vault_response
+
+- name: Set HEC Token fact
+  set_fact:
+    hec_token: "{{ vault_response.json.data.data[otel_splunk_helm.hec_token_key] }}"
+
+- name: Validate parameters
+  assert:
+    that:
+      - hec_token is defined
+      - hec_token | length > 0
+    fail_msg: "HEC Token is missing!"
+
+- name: Deploy OpenTelemetry Helm chart
+  kubernetes.core.helm:
+    name: "{{ otel_splunk_helm.name }}"
+    namespace: "{{ otel_splunk_helm.namespace }}"
+    chart_ref: "{{ otel_splunk_helm.chart_path }}"
+    values_files:
+      - "{{ otel_splunk_helm.values_file }}"
+    set:
+      splunk.hec.token: "{{ hec_token }}"
+  register: helm_deployment
+
+- name: Verify deployment with k8s module
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: "{{ otel_splunk_helm.namespace }}"
+  register: pod_status
+
+- name: Assert that at least one pod is running
+  assert:
+    that:
+      - pod_status.resources | length > 0
+    fail_msg: "No pods found in namespace {{ otel_splunk_helm.namespace }}"
+
+- name: Print deployment status
+  debug:
+    var: pod_status.resources
+
