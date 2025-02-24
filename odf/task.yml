@@ -1,0 +1,35 @@
+- name: Gather Infra Nodes from OpenShift
+  command: "oc get nodes -o jsonpath='{.items[*].metadata.name}' --selector=node-role.kubernetes.io/infra"
+  register: infra_nodes
+  changed_when: false
+
+- name: Ensure we have infra nodes
+  fail:
+    msg: "No infra nodes found in OpenShift cluster!"
+  when: infra_nodes.stdout | length == 0
+
+- name: Add Disk to Each Infra Node in VMware
+  vmware_guest_disk:
+    hostname: "{{ vmware_host }}"
+    username: "{{ vmware_username }}"
+    password: "{{ vmware_password }}"
+    validate_certs: false
+    datacenter: "{{ vmware_datacenter }}"
+    cluster: "{{ vmware_cluster }}"
+    name: "{{ item }}"
+    disk:
+      - size_gb: "{{ disk_size_gb }}"
+        type: "thin"
+        datastore: "{{ vmware_datastore }}"
+  loop: "{{ infra_nodes.stdout.split() }}"
+  register: vmware_disk_result
+
+- name: Print Disk Addition Results
+  debug:
+    var: vmware_disk_result
+
+- name: Reboot Infra Nodes to Detect New Disks
+  command: "oc adm drain {{ item }} --ignore-daemonsets --delete-emptydir-data && oc adm uncordon {{ item }}"
+  loop: "{{ infra_nodes.stdout.split() }}"
+  when: vmware_disk_result is changed
+
