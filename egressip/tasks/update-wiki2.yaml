@@ -1,0 +1,89 @@
+---
+- name: Update Egress manifests in GitLab Wiki
+  hosts: localhost
+  gather_facts: false
+  vars:
+    # GitLab wiki repo URL (SSH or HTTPS with token)
+    wiki_repo_url: "git@gitlab.com:your-group/your-project.wiki.git"
+
+    # Local temporary clone location
+    local_clone_dir: "/tmp/wiki_repo"
+
+    # Current namespace and cluster (passed from GitLab CI or -e)
+    namespace: "{{ namespace }}"
+    cluster: "{{ cluster }}"
+    egress_manifest_src: "{{ role_path }}/files/{{ namespace }}/{{ namespace }}-{{ cluster }}-egress.yaml"
+
+  tasks:
+    - name: Ensure git is installed
+      package:
+        name: git
+        state: present
+
+    - name: Clone GitLab Wiki repository
+      git:
+        repo: "{{ wiki_repo_url }}"
+        dest: "{{ local_clone_dir }}"
+        version: "main"
+        force: yes
+
+    - name: Ensure cluster directory exists in wiki
+      file:
+        path: "{{ local_clone_dir }}/Egress/{{ cluster }}"
+        state: directory
+
+    - name: Copy namespace-cluster manifest into cluster folder
+      copy:
+        src: "{{ egress_manifest_src }}"
+        dest: "{{ local_clone_dir }}/Egress/{{ cluster }}/{{ namespace }}-{{ cluster }}-egress.yaml"
+        force: yes
+
+    - name: Ensure index.md exists
+      file:
+        path: "{{ local_clone_dir }}/Egress/index.md"
+        state: touch
+
+    - name: Read existing index.md content
+      slurp:
+        src: "{{ local_clone_dir }}/Egress/index.md"
+      register: index_file
+      ignore_errors: yes
+
+    - name: Decode index content
+      set_fact:
+        index_content: "{{ index_file.content | b64decode if index_file.content is defined else '' }}"
+
+    - name: Update index.md with current namespace+cluster
+      set_fact:
+        new_entry: "- Cluster: {{ cluster }} / Namespace: {{ namespace }}\n  [View Manifest](./{{ cluster }}/{{ namespace }}-{{ cluster }}-egress.yaml)"
+        index_content: >-
+          {% set pattern = cluster ~ ' / ' ~ namespace %}
+          {% if pattern not in index_content %}
+          {{ index_content | default('') }}
+          {{ new_entry }}
+          {% else %}
+          {{ index_content }}
+          {% endif %}
+
+    - name: Write updated index.md
+      copy:
+        content: "{{ index_content }}"
+        dest: "{{ local_clone_dir }}/Egress/index.md"
+        force: yes
+
+    - name: Stage wiki changes
+      command: git add Egress/
+      args:
+        chdir: "{{ local_clone_dir }}"
+
+    - name: Commit wiki changes
+      command: git commit -m "Update wiki: add/overwrite manifest for {{ namespace }} / {{ cluster }}"
+      args:
+        chdir: "{{ local_clone_dir }}"
+      ignore_errors: yes  # skip if no changes
+
+    - name: Push wiki changes
+      command: git push origin main
+      args:
+        chdir: "{{ local_clone_dir }}"
+
