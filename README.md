@@ -1,38 +1,60 @@
-Role Name
-=========
+# Dynatrace Operator
 
-A brief description of the role goes here.
+[![GoDoc](http://img.shields.io/badge/go-documentation-blue.svg?style=flat-square)](http://godoc.org/github.com/Dynatrace/dynatrace-operator)
+[![CI](https://github.com/Dynatrace/dynatrace-operator/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/Dynatrace/dynatrace-operator/actions/workflows/ci.yaml)
+[![codecov](https://codecov.io/gh/Dynatrace/dynatrace-operator/parse/branch/main/graph/badge.svg)](https://codecov.io/gh/Dynatrace/dynatrace-operator)
+![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/Dynatrace/dynatrace-operator?color=blue&sort=semver)
+[![Go Report Card](https://goreportcard.com/badge/github.com/Dynatrace/dynatrace-operator)](https://goreportcard.com/report/github.com/Dynatrace/dynatrace-operator?dummy=unused)
+[![Releases](https://img.shields.io/github/downloads/Dynatrace/dynatrace-operator/total.svg)](https://github.com/Dynatrace/dynatrace-operator/releases)
 
-Requirements
-------------
+The Dynatrace Operator supports rollout and lifecycle management of various Dynatrace components in Kubernetes and OpenShift.
 
-Any pre-requisites that may not be covered by Ansible itself or the role should be mentioned here. For instance, if the role uses the EC2 module, it may be a good idea to mention in this section that the boto package is required.
+* OneAgent
+  * `classicFullStack` rolls out a OneAgent pod per node to monitor pods on it and the node itself
+  * `applicationMonitoring` is a webhook based injection mechanism for automatic app-only injection
+    * CSI Driver can be enabled to cache OneAgent downloads per node
+  * `hostMonitoring` is only monitoring the hosts (i.e. nodes) in the cluster without app-only injection
+    * CSI Driver is used to provide a writeable volume for the Oneagent as it's running in read-only mode
+  * `cloudNativeFullStack` is a combination of `applicationMonitoring` and `hostMonitoring`
+    * CSI Driver is used for both features
+* ActiveGate
+  * `routing` routes OneAgent traffic through the ActiveGate
+  * `kubernetes-monitoring` allows monitoring of the Kubernetes API
+  * `metrics-ingest` routes enriched metrics through ActiveGate
 
-Role Variables
---------------
+For more information please have a look at [our DynaKube Custom Resource examples](assets/samples/dynakube) and
+our [official help page](https://www.dynatrace.com/support/help/shortlink/kubernetes-hub).
 
-A description of the settable variables for this role should go here, including any variables that are in defaults/main.yml, vars/main.yml, and any variables that can/should be set via parameters to the role. Any variables that are read from other roles and/or the global scope (ie. hostvars, group vars, etc.) should be mentioned here as well.
+## Support lifecycle
 
-Dependencies
-------------
+As the Dynatrace Operator is provided by Dynatrace Incorporated, support is provided by the Dynatrace Support team, as described on the [support page](https://support.dynatrace.com/).
+Github issues will also be considered on a case-by-case basis regardless of support contracts and commercial relationships with Dynatrace.
 
-A list of other roles hosted on Galaxy should go here, plus any details in regards to parameters that may need to be set for other roles, or variables that are used from other roles.
+The [Dynatrace support lifecycle for Kubernetes and Openshift](https://www.dynatrace.com/support/help/shortlink/support-model-k8s-ocp) can be found in the official technology support pages.
 
-Example Playbook
-----------------
+## Quick Start
 
-Including an example of how to use your role (for instance, with variables passed in as parameters) is always nice for users too:
+The Dynatrace Operator acts on its separate namespace `dynatrace`. It holds the operator deployment and all dependent
+objects like permissions, custom resources and corresponding StatefulSets.
 
-    - hosts: servers
-      roles:
-         - { role: username.rolename, x: 42 }
+### Installation
 
-License
--------
+> For install instructions, head to the
+> [official help page](https://www.dynatrace.com/support/help/shortlink/full-stack-dto-k8)
 
-BSD
+## Hacking
 
-Author Information
-------------------
+See [HACKING](HACKING.md) for details on how to get started enhancing Dynatrace Operator.
 
-An optional section for the role authors to include contact information, or a website (HTML is not allowed).
+## Contributing
+
+See [CONTRIBUTING](CONTRIBUTING.md) for details on submitting changes.
+
+## License
+
+Dynatrace Operator is under Apache 2.0 license. See [LICENSE](LICENSE) for details.
+
+## Reporting Issues or Ideas
+
+If you find a bug or security issue, please report it to Dynatrace support by [creating a ticket](https://support.dynatrace.com/).
+If you have an idea or feature request, please join our [Dynatrace Community](https://community.dynatrace.com) and create a post.
