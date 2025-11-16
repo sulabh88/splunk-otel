@@ -1,0 +1,39 @@
+#!/bin/bash
+
+# --- Configuration ---
+CONTROL_NODE="control-abc.com"
+SSH_USER="core"
+SSH_KEY="/sshkey"
+SWITCH_IP="192.168.1.100"
+SWITCH_USER="ceuser"
+SWITCH_PASSWORD="password"
+EMAIL="you@example.com"
+MEMORY_THRESHOLD=21504   # 21 GiB in MB
+TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
+
+# --- Step 1: Copy sshpass to control node ---
+scp -i "$SSH_KEY" /usr/bin/sshpass "$SSH_USER@$CONTROL_NODE:/tmp/sshpass"
+ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$CONTROL_NODE" "chmod +x /tmp/sshpass"
+
+# --- Step 2: Run free -m on switch via control node ---
+MEMORY_FREE=$(ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$CONTROL_NODE" \
+"/tmp/sshpass -p '$SWITCH_PASSWORD' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $SWITCH_USER@$SWITCH_IP 'free -m | grep Mem | awk '\''{print \$7}'\'' '")
+
+# --- Step 3: Check memory and send email if below threshold ---
+if [[ -z "$MEMORY_FREE" ]]; then
+    echo "❌ Could not retrieve memory info from switch $SWITCH_IP"
+    SUBJECT="Switch Memory Check Failed - $SWITCH_IP - $TIMESTAMP"
+    BODY="Failed to retrieve memory information from switch $SWITCH_IP at $TIMESTAMP."
+    echo -e "$BODY" | mail -s "$SUBJECT" "$EMAIL"
+    exit 1
+fi
+
+if (( MEMORY_FREE < MEMORY_THRESHOLD )); then
+    SUBJECT="Switch Memory Alert - $SWITCH_IP - $TIMESTAMP"
+    BODY="❌ Free memory on switch $SWITCH_IP is below threshold: ${MEMORY_FREE}MB at $TIMESTAMP."
+    echo -e "$BODY" | mail -s "$SUBJECT" "$EMAIL"
+    echo "$BODY"
+else
+    echo "✅ Switch $SWITCH_IP memory is healthy: ${MEMORY_FREE}MB free at $TIMESTAMP."
+fi
+

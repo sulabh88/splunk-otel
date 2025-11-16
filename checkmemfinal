@@ -1,0 +1,147 @@
+#!/bin/bash
+
+NAMESPACE="ibm-spectrum-fusion-ns"
+PREFIXES=("esw" "csw")
+
+############################################
+# FUNCTION: Login to cluster
+############################################
+login_cluster() {
+    local kubeconfig="$1"
+
+    if [[ -z "$kubeconfig" ]]; then
+        echo "❌ kubeconfig path missing. Usage: $0 <kubeconfig> swp31 swp32 ..."
+        exit 1
+    fi
+
+    echo "🔐 Logging into OpenShift..."
+    export KUBECONFIG="$kubeconfig"
+
+    oc whoami >/dev/null 2>&1
+    if [[ $? -ne 0 ]]; then
+        echo "❌ Login failed. Check KUBECONFIG."
+        exit 1
+    fi
+
+    echo "✔️ Logged in as: $(oc whoami)"
+}
+
+############################################
+# FUNCTION: Check ports + memory on switches
+############################################
+check_switches() {
+    local ports=("$@")
+
+    if [[ ${#ports[@]} -eq 0 ]]; then
+        echo "❌ No ports passed to check_switches()"
+        exit 1
+    fi
+
+    echo "🔎 Checking for ports: ${ports[*]}"
+
+    # Get all switches dynamically
+    local switches
+    switches=$(oc get switches -n "$NAMESPACE" -o json | jq -r '.items[].metadata.name')
+
+    local failed_ports=""
+    local low_memory=""
+
+    for sw in $switches; do
+        for prefix in "${PREFIXES[@]}"; do
+            if [[ "$sw" == "$prefix"* ]]; then
+                
+                echo "➡️ Processing switch: $sw"
+
+                # Switch IP
+                local ip
+                ip=$(oc get switch "$sw" -n "$NAMESPACE" -o json | jq -r '.status.switchIP')
+
+                # CEUSER password
+                local ce_pass
+                ce_pass=$(oc get secret "$sw-secret" -n "$NAMESPACE" -o json | jq -r '.data.ceUserPassword' | base64 -d)
+
+                # Node hosting switch pod
+                local node
+                node=$(oc get pod -n "$NAMESPACE" -l app="$sw" -o jsonpath='{.items[0].spec.nodeName}')
+
+                echo "📌 Switch IP: $ip | Node: $node"
+
+                # ------------------------
+                # Port Check
+                # ------------------------
+                for p in "${ports[@]}"; do
+                    local state
+                    state=$(oc get switch "$sw" -n "$NAMESPACE" -o json | \
+                        jq -r --arg port "$p" '.status.networkPortStatus[] | select(.portNumber==$port) | .portState')
+
+                    if [[ -z "$state" ]]; then
+                        echo "ℹ️ $sw has no port $p (skipped)"
+                        continue
+                    fi
+
+                    if [[ "$state" != "UP" ]]; then
+                        failed_ports+="$sw: $p -> $state"$'\n'
+                    fi
+                done
+
+                # ------------------------
+                # Memory Check via oc debug
+                # ------------------------
+                echo "🛠️ Copying sshpass into node via oc debug..."
+
+                oc debug node/"$node" --to-namespace=default --quiet -- \
+                    sh -c "cp /host/tmp/sshpass /usr/local/bin/sshpass || true"
+
+                oc debug node/"$node" --to-namespace=default --quiet -- \
+                    sh -c "chmod +x /usr/local/bin/sshpass"
+
+                # Run free -m on switch
+                local free_out
+                free_out=$(oc debug node/"$node" --to-namespace=default --quiet -- bash -c "
+                    /usr/local/bin/sshpass -p '$ce_pass' ssh -o StrictHostKeyChecking=no ceuser@$ip 'free -m'
+                ")
+
+                local mem_avail
+                mem_avail=$(echo "$free_out" | awk '/Mem:/ {print $7}')
+
+                echo "💾 $sw available memory: ${mem_avail} MB"
+
+                if [[ "$mem_avail" -lt 1024 ]]; then
+                    low_memory+="$sw (${mem_avail}MB)"$'\n'
+                fi
+            fi
+        done
+    done
+
+    echo "======================="
+    echo "🚨 FAILED PORTS"
+    echo "$failed_ports"
+    echo "======================="
+    echo "🚨 LOW MEMORY SWITCHES"
+    echo "$low_memory"
+    echo "======================="
+
+    # Email alert
+    if [[ -n "$low_memory" ]]; then
+        mail -s "⚠️ Switch Memory Alert" you@example.com <<EOF
+The following switches have < 1GB memory:
+
+$low_memory
+EOF
+    fi
+}
+
+############################################
+# MAIN SCRIPT
+############################################
+
+# 1. Login
+login_cluster "$1"
+
+# 2. Shift kubeconfig and keep only ports
+shift
+PORTS=("$@")
+
+# 3. Call function
+check_switches "${PORTS[@]}"
+
